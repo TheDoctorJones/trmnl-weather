@@ -1,0 +1,135 @@
+{%- comment -%} default: -1 means a missing API response degrades to "Cloudy"
+     instead of crashing the render on a nil comparison {%- endcomment -%}
+{%- assign code = current.weather_code | default: -1 -%}
+
+{%- comment -%} Tier 0: is it actively raining right now? {%- endcomment -%}
+{%- assign raining_now = false -%}
+{%- if code >= 51 and code <= 67 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if code >= 80 and code <= 82 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if code >= 95 -%}{%- assign raining_now = true -%}{%- endif -%}
+
+{%- comment -%} Find our position in the 15-minute arrays, which start at 00:00 each day.
+     Use the API's own current.time, NOT Liquid's `now`: TRMNL evaluates `now` in server
+     time (UTC) while these arrays use the timezone from the polling URL, and mixing them
+     offsets the index by the full UTC offset (4 hrs for Eastern). {%- endcomment -%}
+{%- assign now_iso = current.time -%}
+{%- assign m_index = 0 -%}
+{%- for t in minutely_15.time -%}
+  {%- if t >= now_iso and m_index == 0 -%}{%- assign m_index = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+
+{%- comment -%} Scan from now through the END OF DAY for the first interval with measurable
+     precipitation, and render its clock time rounded to the nearest :30.
+
+     Uses precipitation AMOUNT rather than hourly probability: Open-Meteo models those
+     separately and they can disagree badly — a forecast showing 1.8mm of rain may still
+     report only 21% probability, which no sane threshold would catch.
+
+     All string/integer math, no `date` filter on API timestamps. Those come back as local
+     times with no offset marker, so parsing them re-interprets them in another timezone
+     and shifts the result by hours. {%- endcomment -%}
+{%- assign rain_soon = "" -%}
+{%- assign rain_start_idx = -1 -%}
+{%- for precip in minutely_15.precipitation offset: m_index -%}
+  {%- if precip > 0 and rain_soon == "" -%}
+    {%- assign r_idx = m_index | plus: forloop.index0 -%}
+    {%- assign rain_start_idx = r_idx -%}
+    {%- assign r_clock = minutely_15.time[r_idx] | split: "T" | last -%}
+    {%- assign r_h = r_clock | split: ":" | first | times: 1 -%}
+    {%- assign r_m = r_clock | split: ":" | last | times: 1 -%}
+    {%- comment -%} Round minutes to nearest :30, carrying the hour when needed {%- endcomment -%}
+    {%- if r_m < 15 -%}{%- assign out_m = "00" -%}
+    {%- elsif r_m < 45 -%}{%- assign out_m = "30" -%}
+    {%- else -%}{%- assign out_m = "00" -%}{%- assign r_h = r_h | plus: 1 -%}{%- endif -%}
+    {%- if r_h >= 24 -%}{%- assign r_h = r_h | minus: 24 -%}{%- endif -%}
+    {%- if r_h >= 12 -%}{%- assign r_ap = "PM" -%}{%- else -%}{%- assign r_ap = "AM" -%}{%- endif -%}
+    {%- assign r_h12 = r_h -%}
+    {%- if r_h12 == 0 -%}{%- assign r_h12 = 12 -%}{%- elsif r_h12 > 12 -%}{%- assign r_h12 = r_h12 | minus: 12 -%}{%- endif -%}
+    {%- assign rain_soon = r_h12 | append: ":" | append: out_m | append: " " | append: r_ap -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{%- comment -%} Day/night suffix: only the sun/moon icons need it. Open-Meteo's is_day returns 1 (day) or 0 (night). {%- endcomment -%}
+{%- if current.is_day == 1 -%}{%- assign tod = "day" -%}{%- else -%}{%- assign tod = "night" -%}{%- endif -%}
+
+{%- comment -%} Single source of truth: WMO weather code -> icon slug + condition text, set together so they can never disagree.
+     Only real WMO codes are matched (no catch-all ranges), so an unrecognized code keeps the neutral "Cloudy" default. {%- endcomment -%}
+{%- assign icon_slug = "cloudy" -%}{%- assign condition = "Cloudy" -%}
+{%- case code -%}
+{%- when 0 -%}{%- assign icon_slug = "clear-" | append: tod -%}{%- assign condition = "Clear" -%}
+{%- when 1 -%}{%- assign icon_slug = "clear-" | append: tod -%}{%- assign condition = "Mainly Clear" -%}
+{%- when 2 -%}{%- assign icon_slug = "partly-cloudy-" | append: tod -%}{%- assign condition = "Partly Cloudy" -%}
+{%- when 3 -%}{%- assign icon_slug = "overcast" -%}{%- assign condition = "Overcast" -%}
+{%- when 45, 48 -%}{%- assign icon_slug = "fog" -%}{%- assign condition = "Foggy" -%}
+{%- when 51, 53, 55 -%}{%- assign icon_slug = "drizzle" -%}{%- assign condition = "Drizzle" -%}
+{%- when 56, 57 -%}{%- assign icon_slug = "sleet" -%}{%- assign condition = "Freezing Drizzle" -%}
+{%- when 61, 63, 65 -%}{%- assign icon_slug = "rain" -%}{%- assign condition = "Rain" -%}
+{%- when 66, 67 -%}{%- assign icon_slug = "sleet" -%}{%- assign condition = "Freezing Rain" -%}
+{%- when 71, 73, 75 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow" -%}
+{%- when 77 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow Grains" -%}
+{%- when 80, 81, 82 -%}{%- assign icon_slug = "rain" -%}{%- assign condition = "Showers" -%}
+{%- when 85, 86 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow Showers" -%}
+{%- when 95 -%}{%- assign icon_slug = "thunderstorms-rain" -%}{%- assign condition = "Thunderstorms" -%}
+{%- when 96, 99 -%}{%- assign icon_slug = "thunderstorms-hail" -%}{%- assign condition = "Thunderstorms, Hail" -%}
+{%- endcase -%}
+
+{%- comment -%} Intensity. minutely_15.precipitation is millimetres per 15-minute interval,
+     so x4 converts to mm/hour. Bands follow the conventional meteorological scale:
+     light under 2.5 mm/h, moderate 2.5–7.6, heavy above 7.6.
+     Peak is taken over 8 intervals (2 hrs) from the start of the rain rather than the
+     first value alone — rain usually builds, and the first drops understate the event. {%- endcomment -%}
+{%- assign rain_peak = 0 -%}
+{%- if rain_start_idx >= 0 -%}
+  {%- for p in minutely_15.precipitation offset: rain_start_idx limit: 8 -%}
+    {%- if p > rain_peak -%}{%- assign rain_peak = p -%}{%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+{%- assign rain_rate = rain_peak | times: 4 -%}
+{%- if rain_rate >= 7.6 -%}{%- assign rain_word = 'Heavy rain' -%}
+{%- elsif rain_rate >= 2.5 -%}{%- assign rain_word = 'Rain' -%}
+{%- else -%}{%- assign rain_word = 'Light rain' -%}{%- endif -%}
+
+{%- comment -%} Same bands applied to current conditions {%- endcomment -%}
+{%- assign now_rate = current.precipitation | times: 4 -%}
+{%- if now_rate >= 7.6 -%}{%- assign now_word = 'Heavy rain' -%}
+{%- elsif now_rate >= 2.5 -%}{%- assign now_word = 'Rain' -%}
+{%- else -%}{%- assign now_word = 'Light rain' -%}{%- endif -%}
+
+{%- comment -%} Resolve the rain status into a single string for the title bar {%- endcomment -%}
+{%- if raining_now -%}
+  {%- assign rain_status = now_word | append: ' right now' -%}
+{%- elsif rain_soon != '' -%}
+  {%- assign rain_status = rain_word | append: ' expected around ' | append: rain_soon -%}
+{%- else -%}
+  {%- assign rain_status = 'No rain expected today' -%}
+{%- endif -%}
+
+<div class="view view--quadrant" style="height: 100%; display: flex; flex-direction: column;">
+
+  <div class="layout" style="flex: 1 1 auto; min-height: 0;">
+    <div class="grid" style="height: 100%; display: grid; grid-template-columns: 45% 55%;">
+      <div class="row row--center" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 6% 4% 6%; gap: 0; overflow: hidden;">
+        <img src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/{{ icon_slug }}.svg" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -15% 0;" />
+      </div>
+      <div class="grid" style="height: 100%;">
+        <div class="col" style="height: 100%; display: flex; flex-direction: column; justify-content: center;">
+          <div class="item">
+            <div class="content" style="display: flex; flex-direction: column; align-items: flex-start; gap: 0;">
+              <span class="value value--xlarge" style="line-height: 1;">{{ current.temperature_2m | round }}°</span>
+              <span class="value font--bold" style="font-size: 20px; line-height: 1.15; margin-top: 8px;">{{ condition }}</span>
+              {%- if daily.temperature_2m_max -%}
+                <span class="value font--bold" style="font-size: 20px; line-height: 1.15; margin-top: 8px;">H: {{ daily.temperature_2m_max[0] | round }}° L: {{ daily.temperature_2m_min[0] | round }}°</span>
+              {%- endif -%}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="title_bar" style="justify-content: center; gap: 8px;">
+    <img class="image" src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/raindrop.svg" />
+    <span class="value font--bold" style="font-size: 18px; flex: 0 0 auto; margin: 0;">{{ rain_status }}</span>
+  </div>
+
+</div>

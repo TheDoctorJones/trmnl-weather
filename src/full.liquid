@@ -1,0 +1,90 @@
+{%- assign code = current.weather_code -%}
+
+{%- comment -%} Tier 0: is it actively raining right now? {%- endcomment -%}
+{%- assign raining_now = false -%}
+{%- if code >= 51 and code <= 67 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if code >= 80 and code <= 82 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if code >= 95 -%}{%- assign raining_now = true -%}{%- endif -%}
+
+{%- comment -%} Tier 1: imminent rain in the next 2 hours, from 15-min nowcast {%- endcomment -%}
+{%- assign minutes_to_rain = -1 -%}
+{%- for precip in minutely_15.precipitation limit: 8 -%}
+  {%- if precip > 0 and minutes_to_rain == -1 -%}{%- assign minutes_to_rain = forloop.index0 | times: 15 -%}{%- endif -%}
+{%- endfor -%}
+
+{%- comment -%} Day/night suffix: only the sun/moon icons need it. Open-Meteo's is_day returns 1 (day) or 0 (night). {%- endcomment -%}
+{%- if current.is_day == 1 -%}{%- assign tod = "day" -%}{%- else -%}{%- assign tod = "night" -%}{%- endif -%}
+
+{%- comment -%} Single source of truth: WMO weather code -> icon slug + condition text, set together so they can never disagree.
+     Only real WMO codes are matched (no catch-all ranges), so an unrecognized code keeps the neutral "Cloudy" default. {%- endcomment -%}
+{%- assign icon_slug = "cloudy" -%}{%- assign condition = "Cloudy" -%}
+{%- case code -%}
+{%- when 0 -%}{%- assign icon_slug = "clear-" | append: tod -%}{%- assign condition = "Clear" -%}
+{%- when 1 -%}{%- assign icon_slug = "clear-" | append: tod -%}{%- assign condition = "Mainly Clear" -%}
+{%- when 2 -%}{%- assign icon_slug = "partly-cloudy-" | append: tod -%}{%- assign condition = "Partly Cloudy" -%}
+{%- when 3 -%}{%- assign icon_slug = "overcast" -%}{%- assign condition = "Overcast" -%}
+{%- when 45, 48 -%}{%- assign icon_slug = "fog" -%}{%- assign condition = "Foggy" -%}
+{%- when 51, 53, 55 -%}{%- assign icon_slug = "drizzle" -%}{%- assign condition = "Drizzle" -%}
+{%- when 56, 57 -%}{%- assign icon_slug = "sleet" -%}{%- assign condition = "Freezing Drizzle" -%}
+{%- when 61, 63, 65 -%}{%- assign icon_slug = "rain" -%}{%- assign condition = "Rain" -%}
+{%- when 66, 67 -%}{%- assign icon_slug = "sleet" -%}{%- assign condition = "Freezing Rain" -%}
+{%- when 71, 73, 75 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow" -%}
+{%- when 77 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow Grains" -%}
+{%- when 80, 81, 82 -%}{%- assign icon_slug = "rain" -%}{%- assign condition = "Showers" -%}
+{%- when 85, 86 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow Showers" -%}
+{%- when 95 -%}{%- assign icon_slug = "thunderstorms-rain" -%}{%- assign condition = "Thunderstorms" -%}
+{%- when 96, 99 -%}{%- assign icon_slug = "thunderstorms-hail" -%}{%- assign condition = "Thunderstorms, Hail" -%}
+{%- endcase -%}
+
+{%- comment -%} Tier 2: find current hour's index, then look ahead through today for >=50% chance {%- endcomment -%}
+{%- assign now_key = 'now' | date: "%Y-%m-%dT%H:00" -%}
+{%- assign now_index = 0 -%}
+{%- for t in hourly.time -%}
+  {%- if t == now_key -%}{%- assign now_index = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- assign rain_hour = "" -%}
+{%- for prob in hourly.precipitation_probability offset: now_index -%}
+  {%- if prob >= 50 and rain_hour == "" -%}
+    {%- assign idx = now_index | plus: forloop.index0 -%}
+    {%- assign rain_hour = hourly.time[idx] | date: "%-I:%M %p" -%}
+  {%- endif -%}
+{%- endfor -%}
+
+<div class="view view--quadrant" style="height: 100%;">
+  <div class="layout" style="height: 100%;">
+    <div class="grid" style="height: 100%; display: grid; grid-template-columns: 35% 65%;">
+      <div class="row row--center" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 6% 12% 6%; gap: 0; overflow: hidden;">
+        <img src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/{{ icon_slug }}.svg" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -20% 0;" />
+        <span class="label" style="flex: 0 0 auto; text-align: center;">{{ condition }}</span>
+        {%- if daily.temperature_2m_max -%}
+  <span class="label" style="flex: 0 0 auto; text-align: center; margin-top: 6px;">H:{{ daily.temperature_2m_max[0] | round }}°  L:{{ daily.temperature_2m_min[0] | round }}°</span>
+{%- endif -%}
+      </div>
+      <div class="grid" style="height: 100%;">
+        <div class="col" style="height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 15px;">
+          <div class="item">
+            <div class="meta"></div>
+            <div class="content">
+              <span class="value value--xlarge">{{ current.temperature_2m | round }}°</span>
+               <span class="label">Feels like: {{ current.apparent_temperature | round }}°</span>
+            </div>
+          </div>
+          <div class="item">
+            <div class="meta"></div>
+            <div class="content">
+              {%- if raining_now -%}
+                <span class="label">Raining now</span>
+              {%- elsif minutes_to_rain >= 0 and minutes_to_rain <= 120 -%}
+                <span class="label">Rain expected in {{ minutes_to_rain }} min</span>
+              {%- elsif rain_hour != "" -%}
+                <span class="label">Rain expected around {{ rain_hour }}</span>
+              {%- else -%}
+                <span class="label">No rain expected today</span>
+              {%- endif -%}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
