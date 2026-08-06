@@ -1,16 +1,28 @@
 {%- assign code = current.weather_code -%}
 
-{%- comment -%} Tier 0: is it actively raining right now? {%- endcomment -%}
+{%- comment -%} Tier 0: is it actively raining right now? weather_code is the primary
+     signal; current.precipitation is a second, independent trigger so a measured
+     rain rate counts even when the code hasn't caught up. {%- endcomment -%}
 {%- assign raining_now = false -%}
 {%- if code >= 51 and code <= 67 -%}{%- assign raining_now = true -%}{%- endif -%}
 {%- if code >= 80 and code <= 82 -%}{%- assign raining_now = true -%}{%- endif -%}
 {%- if code >= 95 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if current.precipitation > 0 -%}{%- assign raining_now = true -%}{%- endif -%}
 
-{%- comment -%} Tier 1: imminent rain in the next 2 hours, from 15-min nowcast {%- endcomment -%}
-{%- assign minutes_to_rain = -1 -%}
-{%- for precip in minutely_15.precipitation limit: 8 -%}
-  {%- if precip > 0 and minutes_to_rain == -1 -%}{%- assign minutes_to_rain = forloop.index0 | times: 15 -%}{%- endif -%}
+{%- comment -%} Tier 1: imminent rain in the next 2 hours, from the 15-min nowcast.
+     minutely_15 starts at 00:00 today, so the scan MUST be offset to the current
+     slot — reading from index 0 inspects last night, not the next 2 hours. {%- endcomment -%}
+{%- assign now_min = 'now' | date: "%Y-%m-%dT%H:%M" -%}
+{%- assign m15_index = -1 -%}
+{%- for t in minutely_15.time -%}
+  {%- if m15_index == -1 and t >= now_min -%}{%- assign m15_index = forloop.index0 -%}{%- endif -%}
 {%- endfor -%}
+{%- assign minutes_to_rain = -1 -%}
+{%- if m15_index >= 0 -%}
+  {%- for precip in minutely_15.precipitation offset: m15_index limit: 8 -%}
+    {%- if precip > 0 and minutes_to_rain == -1 -%}{%- assign minutes_to_rain = forloop.index0 | times: 15 -%}{%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
 
 {%- comment -%} Day/night suffix: only the sun/moon icons need it. Open-Meteo's is_day returns 1 (day) or 0 (night). {%- endcomment -%}
 {%- if current.is_day == 1 -%}{%- assign tod = "day" -%}{%- else -%}{%- assign tod = "night" -%}{%- endif -%}
@@ -36,7 +48,9 @@
 {%- when 96, 99 -%}{%- assign icon_slug = "thunderstorms-hail" -%}{%- assign condition = "Thunderstorms, Hail" -%}
 {%- endcase -%}
 
-{%- comment -%} Tier 2: find current hour's index, then look ahead through today for >=50% chance {%- endcomment -%}
+{%- comment -%} Tier 2: find current hour's index, then look ahead through today for >=50% chance.
+     Requires hourly=precipitation_probability in the polling URL — without it this
+     branch is silently dead and everything falls through to "No rain expected today". {%- endcomment -%}
 {%- assign now_key = 'now' | date: "%Y-%m-%dT%H:00" -%}
 {%- assign now_index = 0 -%}
 {%- for t in hourly.time -%}
@@ -50,38 +64,39 @@
   {%- endif -%}
 {%- endfor -%}
 
-<div class="view view--quadrant" style="height: 100%;">
-  <div class="layout" style="height: 100%;">
-    <div class="grid" style="height: 100%; display: grid; grid-template-columns: 35% 65%;">
-      <div class="row row--center" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 6% 12% 6%; gap: 0; overflow: hidden;">
-        <img src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/{{ icon_slug }}.svg" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -20% 0;" />
-        <span class="label" style="flex: 0 0 auto; text-align: center;">{{ condition }}</span>
-        {%- if daily.temperature_2m_max -%}
-  <span class="label" style="flex: 0 0 auto; text-align: center; margin-top: 6px;">H:{{ daily.temperature_2m_max[0] | round }}°  L:{{ daily.temperature_2m_min[0] | round }}°</span>
-{%- endif -%}
-      </div>
-      <div class="grid" style="height: 100%;">
-        <div class="col" style="height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 15px;">
-          <div class="item">
-            <div class="meta"></div>
-            <div class="content">
-              <span class="value value--xlarge">{{ current.temperature_2m | round }}°</span>
-               <span class="label">Feels like: {{ current.apparent_temperature | round }}°</span>
-            </div>
+{%- comment -%} Root was previously wrapped in an extra `view view--quadrant` div. The
+     platform adds its own view wrapper, and the linter now rejects a second one, so
+     the padding that wrapper contributed is reapplied inline to keep layout identical. {%- endcomment -%}
+<div class="layout" style="height: 100%; padding: var(--gap);">
+  <div class="grid" style="height: 100%; display: grid; grid-template-columns: 35% 65%;">
+    <div class="row row--center" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 6% 12% 6%; gap: 0; overflow: hidden;">
+      <img src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/{{ icon_slug }}.svg" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -20% 0;" />
+      <span class="label" style="flex: 0 0 auto; text-align: center;">{{ condition }}</span>
+      {%- if daily.temperature_2m_max -%}
+        <span class="label" style="flex: 0 0 auto; text-align: center; margin-top: 6px;">H:{{ daily.temperature_2m_max[0] | round }}°  L:{{ daily.temperature_2m_min[0] | round }}°</span>
+      {%- endif -%}
+    </div>
+    <div class="grid" style="height: 100%;">
+      <div class="col" style="height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 15px;">
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            <span class="value value--xlarge">{{ current.temperature_2m | round }}°</span>
+            <span class="label">Feels like: {{ current.apparent_temperature | round }}°</span>
           </div>
-          <div class="item">
-            <div class="meta"></div>
-            <div class="content">
-              {%- if raining_now -%}
-                <span class="label">Raining now</span>
-              {%- elsif minutes_to_rain >= 0 and minutes_to_rain <= 120 -%}
-                <span class="label">Rain expected in {{ minutes_to_rain }} min</span>
-              {%- elsif rain_hour != "" -%}
-                <span class="label">Rain expected around {{ rain_hour }}</span>
-              {%- else -%}
-                <span class="label">No rain expected today</span>
-              {%- endif -%}
-            </div>
+        </div>
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            {%- if raining_now -%}
+              <span class="label">Raining now</span>
+            {%- elsif minutes_to_rain >= 0 and minutes_to_rain <= 120 -%}
+              <span class="label">Rain expected in {{ minutes_to_rain }} min</span>
+            {%- elsif rain_hour != "" -%}
+              <span class="label">Rain expected around {{ rain_hour }}</span>
+            {%- else -%}
+              <span class="label">No rain expected today</span>
+            {%- endif -%}
           </div>
         </div>
       </div>

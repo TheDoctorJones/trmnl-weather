@@ -6,7 +6,7 @@ static_data: ''
 polling_verb: get
 framework_version: 3.2.0
 serverless_language: ''
-polling_url: https://api.open-meteo.com/v1/forecast?latitude={{ latitude }}&longitude={{ longitude }}&current=temperature_2m,apparent_temperature,weather_code,is_day,precipitation&daily=temperature_2m_max,temperature_2m_min&minutely_15=precipitation&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=1&models=ncep_hrrr_conus
+polling_url: https://api.open-meteo.com/v1/forecast?latitude={{ latitude }}&longitude={{ longitude }}&current=temperature_2m,apparent_temperature,weather_code,is_day,precipitation&hourly=precipitation_probability&daily=temperature_2m_max,temperature_2m_min&minutely_15=precipitation&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=1&models=ncep_hrrr_conus
 polling_headers: ''
 polling_body: ''
 id: 407264
