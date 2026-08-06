@@ -1,0 +1,46 @@
+---
+strategy: polling
+no_screen_padding: 'no'
+dark_mode: 'no'
+static_data: ''
+polling_verb: get
+framework_version: 3.2.0
+serverless_language: ''
+polling_url: https://api.open-meteo.com/v1/forecast?latitude={{ latitude }}&longitude={{ longitude }}&current=temperature_2m,apparent_temperature,weather_code,is_day,precipitation&daily=temperature_2m_max,temperature_2m_min&minutely_15=precipitation&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=1&models=ncep_hrrr_conus
+polling_headers: ''
+polling_body: ''
+id: 407264
+oauth_enabled: 'false'
+oauth_pkce_enabled: 'no'
+oauth_authorize_url: ''
+oauth_token_url: ''
+oauth_scopes: ''
+oauth_scope_separator: ''
+oauth_refresh_url: ''
+oauth_auth_params: ''
+oauth_token_headers: ''
+oauth_token_site: ''
+oauth_token_params: ''
+oauth_token_request_auth_method: ''
+oauth_body_format: ''
+oauth_token_response_metadata: ''
+oauth_authorization_method: ''
+oauth_refresh_params: ''
+oauth_token_field_name: ''
+oauth_expiry_field_name: ''
+oauth_expiry_strategy: ''
+oauth_fixed_expiry_ms: ''
+custom_fields:
+- keyname: latitude
+  field_type: string
+  name: Latitude
+  description: Decimal degrees, e.g. 29.5844
+  default: '29.5844'
+- keyname: longitude
+  field_type: string
+  name: Longitude
+  description: Decimal degrees, e.g. -81.2094 (negative = west)
+  default: "-81.2094"
+name: Custom Weather
+description: ''
+refresh_interval: 60
