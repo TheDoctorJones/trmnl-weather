@@ -1,5 +1,9 @@
 {%- assign code = current.weather_code -%}
 
+{%- comment -%} Chance-of-rain threshold for the Tier 2 hourly lookahead. Florida summer
+     convection often sits in the 30-40% band, so 50 was too high to ever fire. {%- endcomment -%}
+{%- assign rain_prob_threshold = 30 -%}
+
 {%- comment -%} Tier 0: is it actively raining right now? weather_code is the primary
      signal; current.precipitation is a second, independent trigger so a measured
      rain rate counts even when the code hasn't caught up. {%- endcomment -%}
@@ -48,18 +52,20 @@
 {%- when 96, 99 -%}{%- assign icon_slug = "thunderstorms-hail" -%}{%- assign condition = "Thunderstorms, Hail" -%}
 {%- endcase -%}
 
-{%- comment -%} Tier 2: find current hour's index, then look ahead through today for >=50% chance.
-     Requires hourly=precipitation_probability in the polling URL — without it this
-     branch is silently dead and everything falls through to "No rain expected today". {%- endcomment -%}
+{%- comment -%} Tier 2: look ahead through the rest of today for a chance of rain at or
+     above the threshold. Requires hourly=precipitation_probability in the polling URL.
+     The scan starts at the NEXT hour, not the current one — the current hour is already
+     covered by the 15-min nowcast above, and including it can print a time in the past. {%- endcomment -%}
 {%- assign now_key = 'now' | date: "%Y-%m-%dT%H:00" -%}
 {%- assign now_index = 0 -%}
 {%- for t in hourly.time -%}
   {%- if t == now_key -%}{%- assign now_index = forloop.index0 -%}{%- endif -%}
 {%- endfor -%}
+{%- assign next_index = now_index | plus: 1 -%}
 {%- assign rain_hour = "" -%}
-{%- for prob in hourly.precipitation_probability offset: now_index -%}
-  {%- if prob >= 50 and rain_hour == "" -%}
-    {%- assign idx = now_index | plus: forloop.index0 -%}
+{%- for prob in hourly.precipitation_probability offset: next_index -%}
+  {%- if prob >= rain_prob_threshold and rain_hour == "" -%}
+    {%- assign idx = next_index | plus: forloop.index0 -%}
     {%- assign rain_hour = hourly.time[idx] | date: "%-I:%M %p" -%}
   {%- endif -%}
 {%- endfor -%}
