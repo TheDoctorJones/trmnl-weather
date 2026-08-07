@@ -101,7 +101,7 @@
 {%- elsif rain_soon != '' -%}
   {%- assign rain_status = rain_word | append: ' expected around ' | append: rain_soon -%}
 {%- else -%}
-  {%- assign rain_status = 'No rain expected today' -%}
+  {%- assign rain_status = 'No rain expected' -%}
 {%- endif -%}
 
 <div class="view view--quadrant" style="height: 100%; display: flex; flex-direction: column;">
