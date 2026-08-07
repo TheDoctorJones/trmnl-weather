@@ -1,4 +1,121 @@
-{%- comment -%} TEMPORARY: renders the debug probe from markup_shared. {%- endcomment -%}
+{%- assign code = current.weather_code -%}
+
+{%- comment -%} Local wall-clock reference. Liquid's `now` filter renders in UTC on this
+     server, but Open-Meteo returns hourly/minutely_15 timestamps in the requested local
+     timezone. Comparing the two silently fails — and after 8pm ET the UTC date rolls
+     over, so nothing matches and the index falls back to 0 (midnight). Derive local time
+     from the UTC epoch plus the user's offset instead. Verified: this matches. {%- endcomment -%}
+{%- assign local_ts = trmnl.system.timestamp_utc | plus: trmnl.user.utc_offset -%}
+{%- assign now_min = local_ts | date: "%Y-%m-%dT%H:%M" -%}
+{%- assign now_key = local_ts | date: "%Y-%m-%dT%H:00" -%}
+
+{%- comment -%} Chance-of-rain threshold for the Tier 2 hourly lookahead. Florida summer
+     convection often sits in the 30-40% band, so 50 was too high to ever fire. {%- endcomment -%}
+{%- assign rain_prob_threshold = 30 -%}
+
+{%- comment -%} Tier 0: is it actively raining right now? weather_code is the primary
+     signal; current.precipitation is a second, independent trigger so a measured
+     rain rate counts even when the code hasn't caught up. {%- endcomment -%}
+{%- assign raining_now = false -%}
+{%- if code >= 51 and code <= 67 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if code >= 80 and code <= 82 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if code >= 95 -%}{%- assign raining_now = true -%}{%- endif -%}
+{%- if current.precipitation > 0 -%}{%- assign raining_now = true -%}{%- endif -%}
+
+{%- comment -%} Tier 1: imminent rain in the next 2 hours, from the 15-min nowcast.
+     minutely_15 starts at 00:00 local, so the scan MUST be offset to the current
+     slot — reading from index 0 inspects last night, not the next 2 hours. {%- endcomment -%}
+{%- assign m15_index = -1 -%}
+{%- for t in minutely_15.time -%}
+  {%- if m15_index == -1 and t >= now_min -%}{%- assign m15_index = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- assign minutes_to_rain = -1 -%}
+{%- if m15_index >= 0 -%}
+  {%- for precip in minutely_15.precipitation offset: m15_index limit: 8 -%}
+    {%- if precip > 0 and minutes_to_rain == -1 -%}{%- assign minutes_to_rain = forloop.index0 | times: 15 -%}{%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+
+{%- comment -%} Day/night suffix: only the sun/moon icons need it. Open-Meteo's is_day returns 1 (day) or 0 (night). {%- endcomment -%}
+{%- if current.is_day == 1 -%}{%- assign tod = "day" -%}{%- else -%}{%- assign tod = "night" -%}{%- endif -%}
+
+{%- comment -%} Single source of truth: WMO weather code -> icon slug + condition text, set together so they can never disagree.
+     Only real WMO codes are matched (no catch-all ranges), so an unrecognized code keeps the neutral "Cloudy" default. {%- endcomment -%}
+{%- assign icon_slug = "cloudy" -%}{%- assign condition = "Cloudy" -%}
+{%- case code -%}
+{%- when 0 -%}{%- assign icon_slug = "clear-" | append: tod -%}{%- assign condition = "Clear" -%}
+{%- when 1 -%}{%- assign icon_slug = "clear-" | append: tod -%}{%- assign condition = "Mainly Clear" -%}
+{%- when 2 -%}{%- assign icon_slug = "partly-cloudy-" | append: tod -%}{%- assign condition = "Partly Cloudy" -%}
+{%- when 3 -%}{%- assign icon_slug = "overcast" -%}{%- assign condition = "Overcast" -%}
+{%- when 45, 48 -%}{%- assign icon_slug = "fog" -%}{%- assign condition = "Foggy" -%}
+{%- when 51, 53, 55 -%}{%- assign icon_slug = "drizzle" -%}{%- assign condition = "Drizzle" -%}
+{%- when 56, 57 -%}{%- assign icon_slug = "sleet" -%}{%- assign condition = "Freezing Drizzle" -%}
+{%- when 61, 63, 65 -%}{%- assign icon_slug = "rain" -%}{%- assign condition = "Rain" -%}
+{%- when 66, 67 -%}{%- assign icon_slug = "sleet" -%}{%- assign condition = "Freezing Rain" -%}
+{%- when 71, 73, 75 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow" -%}
+{%- when 77 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow Grains" -%}
+{%- when 80, 81, 82 -%}{%- assign icon_slug = "rain" -%}{%- assign condition = "Showers" -%}
+{%- when 85, 86 -%}{%- assign icon_slug = "snow" -%}{%- assign condition = "Snow Showers" -%}
+{%- when 95 -%}{%- assign icon_slug = "thunderstorms-rain" -%}{%- assign condition = "Thunderstorms" -%}
+{%- when 96, 99 -%}{%- assign icon_slug = "thunderstorms-hail" -%}{%- assign condition = "Thunderstorms, Hail" -%}
+{%- endcase -%}
+
+{%- comment -%} Tier 2: look ahead through the rest of today for a chance of rain at or
+     above the threshold. Requires hourly=precipitation_probability in the polling URL.
+     now_index starts at -1 so a failed match is obvious rather than silently scanning
+     from midnight. The scan begins at the NEXT hour — the current hour is already
+     covered by the 15-min nowcast, and including it can print a time in the past. {%- endcomment -%}
+{%- assign now_index = -1 -%}
+{%- for t in hourly.time -%}
+  {%- if t == now_key -%}{%- assign now_index = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- assign rain_hour = "" -%}
+{%- if now_index >= 0 -%}
+  {%- assign next_index = now_index | plus: 1 -%}
+  {%- for prob in hourly.precipitation_probability offset: next_index -%}
+    {%- if prob >= rain_prob_threshold and rain_hour == "" -%}
+      {%- assign idx = next_index | plus: forloop.index0 -%}
+      {%- assign rain_hour = hourly.time[idx] | date: "%-I:%M %p" -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+
+{%- comment -%} Root was previously wrapped in an extra `view view--quadrant` div. The
+     platform adds its own view wrapper, and the linter now rejects a second one, so
+     the padding that wrapper contributed is reapplied inline to keep layout identical. {%- endcomment -%}
 <div class="layout" style="height: 100%; padding: var(--gap);">
-  <span class="label label--small" style="word-break: break-all; line-height: 1.4;">{{ debug_probe }}</span>
+  <div class="grid" style="height: 100%; display: grid; grid-template-columns: 35% 65%;">
+    <div class="row row--center" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 6% 12% 6%; gap: 0; overflow: hidden;">
+      <img src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/{{ icon_slug }}.svg" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -20% 0;" />
+      <span class="label" style="flex: 0 0 auto; text-align: center;">{{ condition }}</span>
+      {%- if daily.temperature_2m_max -%}
+        <span class="label" style="flex: 0 0 auto; text-align: center; margin-top: 6px;">H:{{ daily.temperature_2m_max[0] | round }}°  L:{{ daily.temperature_2m_min[0] | round }}°</span>
+      {%- endif -%}
+    </div>
+    <div class="grid" style="height: 100%;">
+      <div class="col" style="height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 15px;">
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            <span class="value value--xlarge">{{ current.temperature_2m | round }}°</span>
+            <span class="label">Feels like: {{ current.apparent_temperature | round }}°</span>
+          </div>
+        </div>
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            {%- if raining_now -%}
+              <span class="label">Raining now</span>
+            {%- elsif minutes_to_rain >= 0 and minutes_to_rain <= 120 -%}
+              <span class="label">Rain expected in {{ minutes_to_rain }} min</span>
+            {%- elsif rain_hour != "" -%}
+              <span class="label">Rain expected around {{ rain_hour }}</span>
+            {%- else -%}
+              <span class="label">No rain expected today</span>
+            {%- endif -%}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
