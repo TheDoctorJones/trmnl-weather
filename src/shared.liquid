@@ -1,0 +1,21 @@
+{%- comment -%} TEMPORARY DEBUG PROBE — safe to delete.
+     Renders the time values the rain tiers depend on so the timezone behaviour of
+     Liquid's `now` on this server can be observed rather than guessed at. {%- endcomment -%}
+{%- assign p_now_min = 'now' | date: "%Y-%m-%dT%H:%M" -%}
+{%- assign p_now_key = 'now' | date: "%Y-%m-%dT%H:00" -%}
+{%- assign p_epoch = 'now' | date: '%s' -%}
+{%- assign p_local_ts = trmnl.system.timestamp_utc | plus: trmnl.user.utc_offset -%}
+{%- assign p_local_key = p_local_ts | date: "%Y-%m-%dT%H:00" -%}
+{%- assign p_utc_key = trmnl.system.timestamp_utc | date: "%Y-%m-%dT%H:00" -%}
+{%- assign p_first_hour = hourly.time[0] -%}
+{%- assign p_last_hour = hourly.time[23] -%}
+{%- assign p_hour_count = hourly.time | size -%}
+{%- assign p_match = -1 -%}
+{%- for t in hourly.time -%}
+  {%- if t == p_now_key -%}{%- assign p_match = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- assign p_match_local = -1 -%}
+{%- for t in hourly.time -%}
+  {%- if t == p_local_key -%}{%- assign p_match_local = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- capture debug_probe -%}now_min={{ p_now_min }} | now_key={{ p_now_key }} | epoch={{ p_epoch }} | utc_key={{ p_utc_key }} | local_key={{ p_local_key }} | first={{ p_first_hour }} | last={{ p_last_hour }} | count={{ p_hour_count }} | match_nowkey={{ p_match }} | match_localkey={{ p_match_local }} | curtime={{ current.time }}{%- endcapture -%}
