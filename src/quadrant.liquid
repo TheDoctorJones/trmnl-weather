@@ -109,7 +109,7 @@
   <div class="layout" style="flex: 1 1 auto; min-height: 0;">
     <div class="grid" style="height: 100%; display: grid; grid-template-columns: 45% 55%;">
       <div class="row row--center" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 6% 4% 6%; gap: 0; overflow: hidden;">
-        <img src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/{{ icon_slug }}.svg" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -15% 0;" />
+        <img src="data:image/svg+xml;base64,{{ icon_svg | base64_encode }}" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -15% 0;" />
       </div>
       <div class="grid" style="height: 100%;">
         <div class="col" style="height: 100%; display: flex; flex-direction: column; justify-content: center;">
@@ -128,7 +128,7 @@
   </div>
 
   <div class="title_bar" style="justify-content: center; gap: 8px;">
-    <img class="image" src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/raindrop.svg" />
+    <img class="image" src="data:image/svg+xml;base64,{{ raindrop_svg | base64_encode }}" />
     <span class="value font--bold" style="font-size: 18px; flex: 0 0 auto; margin: 0;">{{ rain_status }}</span>
   </div>
 
