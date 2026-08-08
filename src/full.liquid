@@ -86,7 +86,10 @@
 <div class="layout" style="height: 100%; padding: var(--gap);">
   <div class="grid" style="height: 100%; display: grid; grid-template-columns: 35% 65%;">
     <div class="row row--center" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 6% 12% 6%; gap: 0; overflow: hidden;">
-      <img src="https://cdn.meteocons.com/3.0.0-next.10/svg-static/monochrome/{{ icon_slug }}.svg" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -20% 0;" />
+      {%- comment -%} Icon comes from markup_shared as an inlined SVG, base64'd into a data
+           URI. Previously an https fetch to cdn.meteocons.com on every render, which added
+           latency and a failure point inside the screenshot pipeline. {%- endcomment -%}
+      <img src="data:image/svg+xml;base64,{{ icon_svg | base64_encode }}" alt="{{ condition }}" style="max-width: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; margin: -20% 0;" />
       <span class="label" style="flex: 0 0 auto; text-align: center;">{{ condition }}</span>
       {%- if daily.temperature_2m_max -%}
         <span class="label" style="flex: 0 0 auto; text-align: center; margin-top: 6px;">H:{{ daily.temperature_2m_max[0] | round }}°  L:{{ daily.temperature_2m_min[0] | round }}°</span>
